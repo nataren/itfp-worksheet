@@ -143,6 +143,7 @@ instance Show a => Show (St a) where
   show f = "value: " ++ show x ++ ", count: " ++ show s
     where (x, s) = apply f 0
 
+-- Monadic evaluator 
 eval :: Monad m => Term -> m Int
 eval (Con x) = return x
 eval (Div t u) = do x <- eval t
@@ -159,3 +160,38 @@ instance Show a => Show (Id a) where
 
 evalId :: Term -> Id Int
 evalId = eval
+
+instance Monad Exc where
+  return x = Return x
+  (Raise e) >>= q = Raise e
+  (Return x) >>= q = q x
+
+raise :: Exception -> Exc a
+raise e = Raise e
+
+evalEx :: Term -> Exc Int
+evalEx (Con x) = return x
+evalEx (Div t u) = do x <- eval t
+                      y <- eval u
+                      if y == 0
+                        then raise "division by zero"
+                        else return (x `div` y)
+
+instance Monad St where
+  return x = MkSt f where f s = (x, s)
+  p >>= q = MkSt f
+            where
+            f s = apply (q x) s'
+              where (x, s') = apply p s
+
+tick :: St ()
+tick = MkSt f
+       where f s = ((), s + 1)
+
+evalSt :: Term -> St Int
+evalSt (Con x) = return x
+evalSt (Div t u) = do x <- evalSt u
+                      y <- evalSt t
+                      tick
+                      return (x `div` y)
+
