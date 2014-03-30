@@ -108,19 +108,54 @@ instance Show a => Show (Exc a) where
 
 type Exception = String
 
-eval :: Term -> Exc Int
-eval (Con x) = Return x
-eval (Div t u) =
-  h (eval t)
-  where
-    h (Raise e) = Raise e
-    h (Return x) = h' (eval u)
-                   where
-                     h' (Raise e') = Raise e'
-                     h' (Return y)
-                       = if y == 0
-                            then Raise "division by zero"
-                                 else Return (x `div` y)
+-- eval :: Term -> Exc Int
+-- eval (Con x) = Return x
+-- eval (Div t u) =
+--   h (eval t)
+--   where
+--     h (Raise e) = Raise e
+--     h (Return x) = h' (eval u)
+--                    where
+--                      h' (Raise e') = Raise e'
+--                      h' (Return y)
+--                        = if y == 0
+--                             then Raise "division by zero"
+--                                  else Return (x `div` y)
 
+type State = Int
 newtype St a = MkSt (State -> (a, State))
--- type State = Int
+
+apply :: St a -> State -> (a, State)
+apply (MkSt f) s = f s
+
+-- eval :: Term -> St Int
+-- eval (Con x) = MkSt f
+--               where f s = (x, s)
+
+-- eval (Div t u) = MkSt f
+--                  where
+--                    f s = (x `div` y, s'' + 1)
+--                          where
+--                            (x, s') = apply (eval t) s
+--                            (y, s'') = apply (eval u) s'
+
+instance Show a => Show (St a) where
+  show f = "value: " ++ show x ++ ", count: " ++ show s
+    where (x, s) = apply f 0
+
+eval :: Monad m => Term -> m Int
+eval (Con x) = return x
+eval (Div t u) = do x <- eval t
+                    y <- eval u
+                    return (x `div` y)
+
+newtype Id a = MkId a
+instance Monad Id where
+  return x = MkId x
+  (MkId x) >>= q = q x
+
+instance Show a => Show (Id a) where
+  show (MkId x) = "value: " ++ show x
+
+evalId :: Term -> Id Int
+evalId = eval
