@@ -91,7 +91,7 @@ diamond f g = (\x -> f x >>= (\y -> g y))
 -- (\x -> getChar)
 -- (\x -> putChar x)
 
-data Term = Con Int | Div Term Term
+data Term = Con Int | Div Term Term | Try Term Term
                       deriving(Show)
 
 -- First evaluator
@@ -122,11 +122,6 @@ type Exception = String
 --                             then Raise "division by zero"
 --                                  else Return (x `div` y)
 
-type State = Int
-newtype St a = MkSt (State -> (a, State))
-
-apply :: St a -> State -> (a, State)
-apply (MkSt f) s = f s
 
 -- eval :: Term -> St Int
 -- eval (Con x) = MkSt f
@@ -177,6 +172,9 @@ evalEx (Div t u) = do x <- eval t
                         then raise "division by zero"
                         else return (x `div` y)
 
+type State = Int
+newtype St a = MkSt (State -> (a, State))
+
 instance Monad St where
   return x = MkSt f where f s = (x, s)
   p >>= q = MkSt f
@@ -188,10 +186,42 @@ tick :: St ()
 tick = MkSt f
        where f s = ((), s + 1)
 
+apply :: St a -> State -> (a, State)
+apply (MkSt f) s = f s
+
+-- evalSt (Div t u) = do x <- evalSt u
+--                       y <- evalSt t
+--                       tick
+--                       return (x `div` y)
 evalSt :: Term -> St Int
 evalSt (Con x) = return x
-evalSt (Div t u) = do x <- evalSt u
-                      y <- evalSt t
-                      tick
-                      return (x `div` y)
+evalSt (Div t u) = tick >>=
+                   \s -> evalSt u >>=
+                         \eu -> evalSt t >>=
+                                \et -> return (et `div` eu)
 
+newtype Out a = MkOut (Output, a)
+type Output = String
+
+instance Show a => Show (Out a) where
+  show (MkOut (ox, x)) = ox ++ "value: " ++ show x
+
+instance Monad Out where
+  return x = MkOut ("", x)
+  p >>= q = MkOut (ox ++ oy, y)
+    where MkOut (ox, x) = p
+          MkOut (oy, y) = q x
+
+out :: Output -> Out ()
+out ox = MkOut (ox, ())
+
+line :: Term -> Int -> Output
+line t x = "term: " ++ show t ++ ", yields " ++ show x
+
+evalOut :: Term -> Out Int
+evalOut (Con x) = do out (line (Con x) x)
+                     return x
+evalOut (Div t u) = do x <- evalOut t
+                       y <- evalOut u
+                       out (line (Div t u) (x `div` y))
+                       return (x `div` y)
